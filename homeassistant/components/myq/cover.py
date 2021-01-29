@@ -1,72 +1,35 @@
 """Support for MyQ-Enabled Garage Doors."""
-import logging
 import time
 
-import voluptuous as vol
+from pymyq.const import (
+    DEVICE_STATE as MYQ_DEVICE_STATE,
+    DEVICE_STATE_ONLINE as MYQ_DEVICE_STATE_ONLINE,
+    DEVICE_TYPE as MYQ_DEVICE_TYPE,
+    DEVICE_TYPE_GATE as MYQ_DEVICE_TYPE_GATE,
+    KNOWN_MODELS,
+    MANUFACTURER,
+)
 
 from homeassistant.components.cover import (
     DEVICE_CLASS_GARAGE,
     DEVICE_CLASS_GATE,
-    PLATFORM_SCHEMA,
     SUPPORT_CLOSE,
     SUPPORT_OPEN,
-    CoverDevice,
+    CoverEntity,
 )
-from homeassistant.config_entries import SOURCE_IMPORT
-from homeassistant.const import (
-    CONF_PASSWORD,
-    CONF_TYPE,
-    CONF_USERNAME,
-    STATE_CLOSED,
-    STATE_CLOSING,
-    STATE_OPENING,
-)
+from homeassistant.const import STATE_CLOSED, STATE_CLOSING, STATE_OPENING
 from homeassistant.core import callback
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
-    KNOWN_MODELS,
-    MANUFACTURER,
     MYQ_COORDINATOR,
-    MYQ_DEVICE_STATE,
-    MYQ_DEVICE_STATE_ONLINE,
-    MYQ_DEVICE_TYPE,
-    MYQ_DEVICE_TYPE_GATE,
     MYQ_GATEWAY,
     MYQ_TO_HASS,
     TRANSITION_COMPLETE_DURATION,
     TRANSITION_START_DURATION,
 )
-
-_LOGGER = logging.getLogger(__name__)
-
-
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_USERNAME): cv.string,
-        vol.Required(CONF_PASSWORD): cv.string,
-        # This parameter is no longer used; keeping it to avoid a breaking change in
-        # a hotfix, but in a future main release, this should be removed:
-        vol.Optional(CONF_TYPE): cv.string,
-    },
-)
-
-
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Set up the platform."""
-
-    hass.async_create_task(
-        hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": SOURCE_IMPORT},
-            data={
-                CONF_USERNAME: config[CONF_USERNAME],
-                CONF_PASSWORD: config[CONF_PASSWORD],
-            },
-        )
-    )
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
@@ -80,12 +43,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     )
 
 
-class MyQDevice(CoverDevice):
+class MyQDevice(CoordinatorEntity, CoverEntity):
     """Representation of a MyQ cover."""
 
     def __init__(self, coordinator, device):
         """Initialize with API object, device id."""
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._device = device
         self._last_action_timestamp = 0
         self._scheduled_transition_update = None
@@ -106,7 +69,7 @@ class MyQDevice(CoverDevice):
     @property
     def available(self):
         """Return if the device is online."""
-        if not self._coordinator.last_update_success:
+        if not self.coordinator.last_update_success:
             return False
 
         # Not all devices report online so assume True if its missing
@@ -171,11 +134,7 @@ class MyQDevice(CoverDevice):
     async def _async_complete_schedule_update(self, _):
         """Update status of the cover via coordinator."""
         self._scheduled_transition_update = None
-        await self._coordinator.async_request_refresh()
-
-    async def async_update(self):
-        """Update status of cover."""
-        await self._coordinator.async_request_refresh()
+        await self.coordinator.async_request_refresh()
 
     @property
     def device_info(self):
@@ -202,17 +161,13 @@ class MyQDevice(CoverDevice):
 
         self.async_write_ha_state()
 
-    @property
-    def should_poll(self):
-        """Return False, updates are controlled via coordinator."""
-        return False
-
     async def async_added_to_hass(self):
         """Subscribe to updates."""
-        self._coordinator.async_add_listener(self._async_consume_update)
+        self.async_on_remove(
+            self.coordinator.async_add_listener(self._async_consume_update)
+        )
 
     async def async_will_remove_from_hass(self):
         """Undo subscription."""
-        self._coordinator.async_remove_listener(self._async_consume_update)
         if self._scheduled_transition_update:
             self._scheduled_transition_update()

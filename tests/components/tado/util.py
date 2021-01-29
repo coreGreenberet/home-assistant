@@ -5,13 +5,13 @@ import requests_mock
 from homeassistant.components.tado import DOMAIN
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.setup import async_setup_component
 
-from tests.common import load_fixture
+from tests.common import MockConfigEntry, load_fixture
 
 
 async def async_init_integration(
-    hass: HomeAssistant, skip_setup: bool = False,
+    hass: HomeAssistant,
+    skip_setup: bool = False,
 ):
     """Set up the tado integration in Home Assistant."""
 
@@ -19,6 +19,9 @@ async def async_init_integration(
     devices_fixture = "tado/devices.json"
     me_fixture = "tado/me.json"
     zones_fixture = "tado/zones.json"
+
+    # WR1 Device
+    device_wr1_fixture = "tado/device_wr1.json"
 
     # Smart AC with Swing
     zone_5_state_fixture = "tado/smartac3.with_swing.json"
@@ -40,14 +43,30 @@ async def async_init_integration(
     zone_1_state_fixture = "tado/tadov2.heating.manual_mode.json"
     zone_1_capabilities_fixture = "tado/tadov2.zone_capabilities.json"
 
+    # Device Temp Offset
+    device_temp_offset = "tado/device_temp_offset.json"
+
     with requests_mock.mock() as m:
         m.post("https://auth.tado.com/oauth/token", text=load_fixture(token_fixture))
         m.get(
-            "https://my.tado.com/api/v2/me", text=load_fixture(me_fixture),
+            "https://my.tado.com/api/v2/me",
+            text=load_fixture(me_fixture),
         )
         m.get(
             "https://my.tado.com/api/v2/homes/1/devices",
             text=load_fixture(devices_fixture),
+        )
+        m.get(
+            "https://my.tado.com/api/v2/devices/WR1/",
+            text=load_fixture(device_wr1_fixture),
+        )
+        m.get(
+            "https://my.tado.com/api/v2/devices/WR1/temperatureOffset",
+            text=load_fixture(device_temp_offset),
+        )
+        m.get(
+            "https://my.tado.com/api/v2/devices/WR4/temperatureOffset",
+            text=load_fixture(device_temp_offset),
         )
         m.get(
             "https://my.tado.com/api/v2/homes/1/zones",
@@ -93,8 +112,11 @@ async def async_init_integration(
             "https://my.tado.com/api/v2/homes/1/zones/1/state",
             text=load_fixture(zone_1_state_fixture),
         )
+        entry = MockConfigEntry(
+            domain=DOMAIN, data={CONF_USERNAME: "mock", CONF_PASSWORD: "mock"}
+        )
+        entry.add_to_hass(hass)
+
         if not skip_setup:
-            assert await async_setup_component(
-                hass, DOMAIN, {DOMAIN: {CONF_USERNAME: "mock", CONF_PASSWORD: "mock"}}
-            )
+            await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()

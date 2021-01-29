@@ -28,10 +28,10 @@ async def validate_input(hass: core.HomeAssistant, data):
 
     try:
         await pymyq.login(data[CONF_USERNAME], data[CONF_PASSWORD], websession)
-    except InvalidCredentialsError:
-        raise InvalidAuth
-    except MyQError:
-        raise CannotConnect
+    except InvalidCredentialsError as err:
+        raise InvalidAuth from err
+    except MyQError as err:
+        raise CannotConnect from err
 
     return {"title": data[CONF_USERNAME]}
 
@@ -75,13 +75,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # they already have one configured as they can always
             # add a new one via "+"
             return self.async_abort(reason="already_configured")
+        properties = {
+            key.lower(): value for (key, value) in homekit_info["properties"].items()
+        }
+        await self.async_set_unique_id(properties["id"])
         return await self.async_step_user()
-
-    async def async_step_import(self, user_input):
-        """Handle import."""
-        await self.async_set_unique_id(user_input[CONF_USERNAME])
-        self._abort_if_unique_id_configured()
-        return await self.async_step_user(user_input)
 
 
 class CannotConnect(exceptions.HomeAssistantError):
